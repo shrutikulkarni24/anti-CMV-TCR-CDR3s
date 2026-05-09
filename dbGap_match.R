@@ -1,0 +1,62 @@
+path <- '~/Documents/Medical School/Research/'
+filtered_file <- ''
+TR_file <- 'anti viral CDR3s from vdjdb Oct 9/SearchTable-2024-10-09 18_35_45.642.tsv'
+TR <- 'TRB'
+chimeric <- F
+wxs <- F
+library(tidyverse)
+
+## read in the matching TR reads and pick receptor type
+Konrad_unfiltered <- read_csv(paste(path, filtered_file, sep=''))
+Konrad_unfiltered <- Konrad_unfiltered %>% filter(receptor == TR)
+if(!chimeric){
+  Konrad_unfiltered <- Konrad_unfiltered  %>% filter(!grepl('chimeric', Filename))
+}
+if(wxs){
+  Konrad_unfiltered <- Konrad_unfiltered %>% filter(`Assay Type` == 'wxs')
+} else{
+  Konrad_unfiltered <- Konrad_unfiltered %>% filter(`Assay Type` == 'RNA-Seq')
+}
+total_pt <- unique(Konrad_unfiltered$Filename)
+Konrad_filtered <- distinct(Konrad_unfiltered, CDR3, .keep_all = T)
+TR_files <- read_tsv(paste(path, TR_file, sep=''))
+TR_files <- distinct(TR_files %>% filter(Gene == TR), CDR3, .keep_all = T)
+
+##find read numbers
+reads_meta <- Konrad_filtered %>% filter(body_site != 'breast')
+reads_prim <- Konrad_filtered %>% filter(body_site == 'breast')
+
+##find patients numbers
+pt_CDR3_remove <- unique(Konrad_filtered$Filename)
+pt_meta <- unique((Konrad_filtered %>% filter(body_site != 'breast'))$Filename)
+pt_prim <- unique((Konrad_filtered %>% filter(body_site == 'breast'))$Filename)
+
+## isolate the important columns
+TR_files <- TR_files %>% select(CDR3, Epitope,`Epitope gene`, `Epitope species`)
+Konrad_filtered <- Konrad_filtered[, apply(Konrad_filtered, 2, function(x) !all(is.na(x)))]
+
+##join together based on CDR3
+final <- merge(Konrad_filtered, TR_files, by = 'CDR3')
+write.csv(final, paste(path, 'TCGA_matched_TRA.csv', sep = ''))
+
+##find the metastatic and primary tumor reads
+final_metastatic <- final %>% filter(body_site != 'breast')
+final_primary <- final %>% filter(body_site == 'breast')
+
+#identify the epitopes associated with each read and with each patient & remove chimeric
+final_metastatic %>% count(`Epitope species`)
+pt_epitopes_meta <- final_metastatic %>% group_by(Filename) %>% count(`Epitope species`)
+
+final_primary %>% count(`Epitope species`)
+pt_epitopes_prim <- final_primary %>% group_by(Filename) %>% count(`Epitope species`)
+
+write_csv(pt_epitopes_meta, paste(path, 'PT_meta_wxs_TRB_matches_05-27-25.csv', sep = ''))
+write_csv(pt_epitopes_prim, paste(path, 'PT_prim_wxs_TRB_matches_05-27-25.csv', sep = ''))
+
+##Find number of patients with matches
+unique(pt_epitopes_prim$Filename)
+unique(pt_epitopes_meta$Filename)
+
+## To find unique reads per patient
+pt_epitopes_prim %>% group_by(Filename, `Epitope species`) %>% summarise(total_count=n(),.groups = 'drop') %>% count(`Epitope species`)
+pt_epitopes_meta %>% group_by(Filename, `Epitope species`) %>% summarise(total_count=n(),.groups = 'drop') %>% count(`Epitope species`)
